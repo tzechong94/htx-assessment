@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { TASK_STATUSES } from '../db/schema.js';
+import type { IdentifySkills } from '../services/skill-identifier.js';
 import { createTask, getTask, listTasks, updateTask } from '../services/tasks.js';
 import { idParam } from './params.js';
 
@@ -32,7 +33,7 @@ const updateTaskBody = z
     message: 'Provide at least one of status or assigneeId',
   });
 
-export function tasksRouter(db: Db) {
+export function tasksRouter(db: Db, identifySkills: IdentifySkills) {
   const router = Router();
 
   router.get('/', async (_req, res) => {
@@ -46,7 +47,7 @@ export function tasksRouter(db: Db) {
 
   router.post('/', async (req, res) => {
     const body = createTaskBody.parse(req.body);
-    res.status(201).json(await createTask(db, body));
+    res.status(201).json(await createTask(db, identifySkills, body));
   });
 
   router.patch('/:id', async (req, res) => {

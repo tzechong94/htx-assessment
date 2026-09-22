@@ -15,6 +15,7 @@ export type Task = {
   status: TaskStatus;
   parentId: number | null;
   skills: Skill[];
+  skillsIdentifiedByLlm: boolean;
   assignee: DeveloperRef | null;
   createdAt: string;
   subtasks: Task[];

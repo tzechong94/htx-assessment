@@ -9,12 +9,14 @@ import { seed } from '../src/db/seed.js';
 
 /** Fresh in-memory Postgres with the real migrations and seed applied. */
 export async function createTestApp(overrides: Partial<Omit<AppDeps, 'db'>> = {}) {
+  // Tests never hit the network: by default the LLM identifies nothing.
+  const identifySkills: AppDeps['identifySkills'] = async (titles) => titles.map(() => null);
   const client = new PGlite();
   const db = drizzle(client, { schema }) as unknown as Db;
   await migrate(drizzle(client), { migrationsFolder: './drizzle' });
   await seed(db);
 
-  const app = createApp({ db, ...overrides });
+  const app = createApp({ db, identifySkills, ...overrides });
   const developers: { id: number; name: string }[] = (await request(app).get('/api/developers')).body;
   const skills: { id: number; name: string }[] = (await request(app).get('/api/skills')).body;
 

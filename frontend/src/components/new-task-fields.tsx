@@ -1,4 +1,4 @@
-import { Check } from 'lucide-react';
+import { Check, Sparkles } from 'lucide-react';
 import { useId } from 'react';
 import { cn } from 'cn';
 import { Label } from '@/components/ui/label';
@@ -75,6 +75,12 @@ export function NewTaskFields<T extends TaskFields>({ draft, onChange, showError
                 );
               })}
         </div>
+        {draft.skillIds.length === 0 && (
+          <p className="mt-1 flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Sparkles className="size-3.5 text-violet-500" />
+            Leave empty and AI will identify the required skills from the title.
+          </p>
+        )}
       </fieldset>
     </div>
   );

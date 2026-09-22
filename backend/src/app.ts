@@ -5,9 +5,11 @@ import { HttpError } from './lib/errors.js';
 import { developersRouter } from './routes/developers.js';
 import { skillsRouter } from './routes/skills.js';
 import { tasksRouter } from './routes/tasks.js';
+import type { IdentifySkills } from './services/skill-identifier.js';
 
 export type AppDeps = {
   db: Db;
+  identifySkills: IdentifySkills;
 };
 
 const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
@@ -34,7 +36,7 @@ const errorHandler: ErrorRequestHandler = (err, _req, res, _next) => {
   res.status(500).json({ error: { code: 'INTERNAL', message: 'Something went wrong' } });
 };
 
-export function createApp({ db }: AppDeps) {
+export function createApp({ db, identifySkills }: AppDeps) {
   const app = express();
   app.use(express.json());
 
@@ -43,7 +45,7 @@ export function createApp({ db }: AppDeps) {
   });
   app.use('/api/skills', skillsRouter(db));
   app.use('/api/developers', developersRouter(db));
-  app.use('/api/tasks', tasksRouter(db));
+  app.use('/api/tasks', tasksRouter(db, identifySkills));
 
   app.use('/api', (_req, res) => {
     res.status(404).json({ error: { code: 'NOT_FOUND', message: 'Route not found' } });

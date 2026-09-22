@@ -95,7 +95,7 @@ function TaskRows({ task, parent, depth, developers, collapsed, onToggle }: Task
           </div>
         </TableCell>
         <TableCell className="py-4 align-top">
-          <SkillBadges skills={task.skills} />
+          <SkillBadges skills={task.skills} identifiedByLlm={task.skillsIdentifiedByLlm} />
         </TableCell>
         <TableCell className="py-3 align-top">
           <StatusSelect

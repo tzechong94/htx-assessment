@@ -1,6 +1,7 @@
 import { relations, sql } from 'drizzle-orm';
 import {
   type AnyPgColumn,
+  boolean,
   check,
   index,
   integer,
@@ -48,6 +49,8 @@ export const tasks = pgTable(
     assigneeId: integer('assignee_id').references(() => developers.id, { onDelete: 'set null' }),
     // Subtasks are tasks with a parent (adjacency list), so they share every property of a task.
     parentId: integer('parent_id').references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }),
+    // True when the required skills were identified by the LLM rather than chosen by the user.
+    skillsIdentifiedByLlm: boolean('skills_identified_by_llm').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
   (t) => [

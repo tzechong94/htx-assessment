@@ -2,6 +2,7 @@ import { type SQL, and, asc, eq, inArray, ne } from 'drizzle-orm';
 import type { Db } from '../db/client.js';
 import { developerSkills, developers, skills, taskSkills, tasks, type TaskStatus } from '../db/schema.js';
 import { HttpError, notFound } from '../lib/errors.js';
+import type { IdentifySkills } from './skill-identifier.js';
 
 export type CreateTaskInput = {
   title: string;
@@ -34,6 +35,7 @@ function toDto(row: TaskRow) {
     status: row.status,
     parentId: row.parentId,
     skills: row.taskSkills.map((ts) => ts.skill).sort((a, b) => a.id - b.id),
+    skillsIdentifiedByLlm: row.skillsIdentifiedByLlm,
     assignee: row.assignee,
     createdAt: row.createdAt,
   };
@@ -85,22 +87,59 @@ function flatten(input: CreateTaskInput): CreateTaskInput[] {
   return [input, ...input.subtasks.flatMap(flatten)];
 }
 
-async function insertTree(tx: Db, input: CreateTaskInput, parentId: number | null): Promise<number> {
-  const [row] = await tx.insert(tasks).values({ title: input.title, parentId }).returning({ id: tasks.id });
-  const skillIds = [...new Set(input.skillIds)];
+/** Skill ids chosen by the LLM, keyed by the input node they belong to. */
+type IdentifiedSkills = Map<CreateTaskInput, number[]>;
+
+async function insertTree(
+  tx: Db,
+  input: CreateTaskInput,
+  parentId: number | null,
+  identified: IdentifiedSkills,
+): Promise<number> {
+  const llmSkillIds = identified.get(input);
+  const [row] = await tx
+    .insert(tasks)
+    .values({ title: input.title, parentId, skillsIdentifiedByLlm: llmSkillIds !== undefined })
+    .returning({ id: tasks.id });
+  const skillIds = llmSkillIds ?? [...new Set(input.skillIds)];
   if (skillIds.length > 0) {
     await tx.insert(taskSkills).values(skillIds.map((skillId) => ({ taskId: row!.id, skillId })));
   }
   for (const subtask of input.subtasks) {
-    await insertTree(tx, subtask, row!.id);
+    await insertTree(tx, subtask, row!.id, identified);
   }
   return row!.id;
 }
 
-/** Creates a task and its nested subtasks atomically. */
-export async function createTask(db: Db, input: CreateTaskInput) {
-  await assertSkillsExist(db, [...new Set(flatten(input).flatMap((t) => t.skillIds))]);
-  const id = await db.transaction((tx) => insertTree(tx, input, null));
+/** One batched LLM call for every node the user left without skills. */
+async function identifyMissingSkills(db: Db, identifySkills: IdentifySkills, nodes: CreateTaskInput[]) {
+  const identified: IdentifiedSkills = new Map();
+  const pending = nodes.filter((node) => node.skillIds.length === 0);
+  if (pending.length === 0) return identified;
+
+  const allSkills = await db.select().from(skills);
+  const idByName = new Map(allSkills.map((s) => [s.name, s.id]));
+  const results = await identifySkills(
+    pending.map((node) => node.title),
+    allSkills.map((s) => s.name),
+  );
+
+  pending.forEach((node, i) => {
+    const ids = results[i]?.flatMap((name) => idByName.get(name) ?? []);
+    if (ids && ids.length > 0) identified.set(node, ids);
+  });
+  return identified;
+}
+
+/**
+ * Creates a task and its nested subtasks atomically. Nodes without user-chosen skills get them
+ * from the LLM first, outside the transaction, so a slow network call never holds row locks.
+ */
+export async function createTask(db: Db, identifySkills: IdentifySkills, input: CreateTaskInput) {
+  const nodes = flatten(input);
+  await assertSkillsExist(db, [...new Set(nodes.flatMap((t) => t.skillIds))]);
+  const identified = await identifyMissingSkills(db, identifySkills, nodes);
+  const id = await db.transaction((tx) => insertTree(tx, input, null, identified));
   return getTask(db, id);
 }
 

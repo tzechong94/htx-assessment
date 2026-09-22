@@ -1,0 +1,1 @@
+ALTER TABLE "tasks" ADD COLUMN "skills_identified_by_llm" boolean DEFAULT false NOT NULL;
