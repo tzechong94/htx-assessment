@@ -11,6 +11,9 @@ export type CreateTaskInput = {
 };
 
 export type UpdateTaskInput = {
+  title?: string;
+  /** Replaces the required skills; an empty array asks the LLM to identify them from the title. */
+  skillIds?: number[];
   status?: TaskStatus;
   assigneeId?: number | null;
 };
@@ -144,25 +147,20 @@ export async function createTask(db: Db, identifySkills: IdentifySkills, input: 
 }
 
 /** A developer qualifies for a task only if they hold every skill the task requires. */
-async function assertDeveloperQualifies(tx: Db, taskId: number, developerId: number) {
+async function assertDeveloperQualifies(tx: Db, developerId: number, requiredSkillIds: number[]) {
   const [developer] = await tx.select().from(developers).where(eq(developers.id, developerId));
   if (!developer) {
     throw new HttpError(422, 'UNKNOWN_DEVELOPER', `Developer ${developerId} does not exist`);
   }
 
-  const required = await tx
-    .select({ id: skills.id, name: skills.name })
-    .from(taskSkills)
-    .innerJoin(skills, eq(skills.id, taskSkills.skillId))
-    .where(eq(taskSkills.taskId, taskId));
   const held = await tx
     .select({ skillId: developerSkills.skillId })
     .from(developerSkills)
     .where(eq(developerSkills.developerId, developerId));
-
   const heldIds = new Set(held.map((h) => h.skillId));
-  const missing = required.filter((s) => !heldIds.has(s.id));
-  if (missing.length > 0) {
+  const missingIds = requiredSkillIds.filter((id) => !heldIds.has(id));
+  if (missingIds.length > 0) {
+    const missing = await tx.select({ name: skills.name }).from(skills).where(inArray(skills.id, missingIds));
     throw new HttpError(
       422,
       'SKILL_MISMATCH',
@@ -171,11 +169,34 @@ async function assertDeveloperQualifies(tx: Db, taskId: number, developerId: num
   }
 }
 
+/** Resolves an edit's new skills before the transaction, since it may involve an LLM call. */
+async function resolveSkillEdit(db: Db, identifySkills: IdentifySkills, id: number, input: UpdateTaskInput) {
+  if (input.skillIds === undefined) return undefined;
+
+  if (input.skillIds.length > 0) {
+    const ids = [...new Set(input.skillIds)];
+    await assertSkillsExist(db, ids);
+    return { ids, identifiedByLlm: false };
+  }
+
+  let title = input.title;
+  if (title === undefined) {
+    const [task] = await db.select({ title: tasks.title }).from(tasks).where(eq(tasks.id, id));
+    if (!task) throw notFound('Task', id);
+    title = task.title;
+  }
+  const node: CreateTaskInput = { title, skillIds: [], subtasks: [] };
+  const ids = (await identifyMissingSkills(db, identifySkills, [node])).get(node) ?? [];
+  return { ids, identifiedByLlm: ids.length > 0 };
+}
+
 /**
  * Invariant: a Done task has only Done subtasks. It is kept by two checks, which always lock the
  * parent row before the child so a concurrent "complete parent" and "reopen child" serialize.
  */
-export async function updateTask(db: Db, id: number, input: UpdateTaskInput) {
+export async function updateTask(db: Db, identifySkills: IdentifySkills, id: number, input: UpdateTaskInput) {
+  const skillEdit = await resolveSkillEdit(db, identifySkills, id, input);
+
   await db.transaction(async (tx) => {
     // parent_id never changes after creation, so reading it before taking locks is safe.
     const [current] = await tx.select({ parentId: tasks.parentId }).from(tasks).where(eq(tasks.id, id));
@@ -209,18 +230,40 @@ export async function updateTask(db: Db, id: number, input: UpdateTaskInput) {
       }
     }
 
-    if (input.assigneeId != null) {
-      await assertDeveloperQualifies(tx, id, input.assigneeId);
+    // Check the state after the edit: the resulting assignee must hold the resulting skills.
+    const assigneeId = input.assigneeId !== undefined ? input.assigneeId : task.assigneeId;
+    if (assigneeId !== null && (input.assigneeId != null || skillEdit)) {
+      const requiredSkillIds =
+        skillEdit?.ids ??
+        (await tx.select({ id: taskSkills.skillId }).from(taskSkills).where(eq(taskSkills.taskId, id))).map(
+          (s) => s.id,
+        );
+      await assertDeveloperQualifies(tx, assigneeId, requiredSkillIds);
     }
 
     await tx
       .update(tasks)
       .set({
+        ...(input.title !== undefined && { title: input.title }),
         ...(input.status !== undefined && { status: input.status }),
         ...(input.assigneeId !== undefined && { assigneeId: input.assigneeId }),
+        ...(skillEdit && { skillsIdentifiedByLlm: skillEdit.identifiedByLlm }),
       })
       .where(eq(tasks.id, id));
+
+    if (skillEdit) {
+      await tx.delete(taskSkills).where(eq(taskSkills.taskId, id));
+      if (skillEdit.ids.length > 0) {
+        await tx.insert(taskSkills).values(skillEdit.ids.map((skillId) => ({ taskId: id, skillId })));
+      }
+    }
   });
 
   return getTask(db, id);
+}
+
+/** Deletes a task; its subtasks go with it through the ON DELETE CASCADE foreign key. */
+export async function deleteTask(db: Db, id: number) {
+  const deleted = await db.delete(tasks).where(eq(tasks.id, id)).returning({ id: tasks.id });
+  if (deleted.length === 0) throw notFound('Task', id);
 }

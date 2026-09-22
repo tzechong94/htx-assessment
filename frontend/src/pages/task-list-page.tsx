@@ -6,6 +6,7 @@ import { AssigneeSelect } from '@/components/assignee-select';
 import { PageHeader } from '@/components/page-header';
 import { SkillBadges } from '@/components/skill-badges';
 import { StatusSelect } from '@/components/status-select';
+import { TaskActions } from '@/components/task-actions';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -112,6 +113,9 @@ function TaskRows({ task, parent, depth, developers, collapsed, onToggle }: Task
             onChange={(assigneeId) => updateTask.mutate({ id: task.id, input: { assigneeId } })}
           />
         </TableCell>
+        <TableCell className="py-3 align-top">
+          <TaskActions task={task} />
+        </TableCell>
       </TableRow>
       {expanded &&
         task.subtasks.map((subtask) => (
@@ -163,6 +167,9 @@ function LoadingRows() {
       </TableCell>
       <TableCell className="py-3">
         <Skeleton className="h-8 w-44" />
+      </TableCell>
+      <TableCell className="py-3">
+        <Skeleton className="size-7" />
       </TableCell>
     </TableRow>
   ));
@@ -225,7 +232,10 @@ export function TaskListPage() {
                 <TableHead className="w-[46%] pl-[42px]">Task title</TableHead>
                 <TableHead>Skills</TableHead>
                 <TableHead className="w-40">Status</TableHead>
-                <TableHead className="w-48 pr-4">Assignee</TableHead>
+                <TableHead className="w-48">Assignee</TableHead>
+                <TableHead className="w-12 pr-4">
+                  <span className="sr-only">Actions</span>
+                </TableHead>
               </TableRow>
             </TableHeader>
             <TableBody className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4">

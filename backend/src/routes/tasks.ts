@@ -3,7 +3,7 @@ import { z } from 'zod';
 import type { Db } from '../db/client.js';
 import { TASK_STATUSES } from '../db/schema.js';
 import type { IdentifySkills } from '../services/skill-identifier.js';
-import { createTask, getTask, listTasks, updateTask } from '../services/tasks.js';
+import { createTask, deleteTask, getTask, listTasks, updateTask } from '../services/tasks.js';
 import { idParam } from './params.js';
 
 // Bounds a single request, since every node is a row insert (and later an LLM classification).
@@ -26,11 +26,13 @@ const createTaskBody = taskNode.refine((root) => countNodes(root) <= MAX_TASKS_P
 
 const updateTaskBody = z
   .object({
+    title: z.string().trim().min(1).max(500).optional(),
+    skillIds: z.array(z.number().int().positive()).optional(),
     status: z.enum(TASK_STATUSES).optional(),
     assigneeId: z.number().int().positive().nullable().optional(),
   })
-  .refine((body) => body.status !== undefined || body.assigneeId !== undefined, {
-    message: 'Provide at least one of status or assigneeId',
+  .refine((body) => Object.values(body).some((v) => v !== undefined), {
+    message: 'Provide at least one of title, skillIds, status or assigneeId',
   });
 
 export function tasksRouter(db: Db, identifySkills: IdentifySkills) {
@@ -53,7 +55,13 @@ export function tasksRouter(db: Db, identifySkills: IdentifySkills) {
   router.patch('/:id', async (req, res) => {
     const { id } = idParam.parse(req.params);
     const body = updateTaskBody.parse(req.body);
-    res.json(await updateTask(db, id, body));
+    res.json(await updateTask(db, identifySkills, id, body));
+  });
+
+  router.delete('/:id', async (req, res) => {
+    const { id } = idParam.parse(req.params);
+    await deleteTask(db, id);
+    res.status(204).end();
   });
 
   return router;

@@ -23,7 +23,13 @@ export type Task = {
 
 export type CreateTaskInput = { title: string; skillIds: number[]; subtasks: CreateTaskInput[] };
 
-export type UpdateTaskInput = { status?: TaskStatus; assigneeId?: number | null };
+export type UpdateTaskInput = {
+  title?: string;
+  /** An empty array asks the server to identify skills from the title with the LLM. */
+  skillIds?: number[];
+  status?: TaskStatus;
+  assigneeId?: number | null;
+};
 
 export class ApiError extends Error {
   constructor(
@@ -40,7 +46,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...init,
     headers: { 'Content-Type': 'application/json', ...init?.headers },
   });
-  const body = await res.json().catch(() => null);
+  const body = res.status === 204 ? null : await res.json().catch(() => null);
   if (!res.ok) {
     throw new ApiError(res.status, body?.error?.code ?? 'UNKNOWN', body?.error?.message ?? res.statusText);
   }
@@ -55,4 +61,5 @@ export const api = {
     request<Task>('/tasks', { method: 'POST', body: JSON.stringify(input) }),
   updateTask: (id: number, input: UpdateTaskInput) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(input) }),
+  deleteTask: (id: number) => request<null>(`/tasks/${id}`, { method: 'DELETE' }),
 };

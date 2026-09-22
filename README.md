@@ -106,7 +106,8 @@ All responses are JSON. Errors have the shape `{ "error": { "code": "...", "mess
 | GET    | `/api/tasks`          | Top-level tasks, each with its full `subtasks` tree |
 | GET    | `/api/tasks/:id`      | One task with its full subtask tree |
 | POST   | `/api/tasks`          | Create a task and, optionally, nested subtasks |
-| PATCH  | `/api/tasks/:id`      | Change `status` and/or `assigneeId` (`null` unassigns) |
+| PATCH  | `/api/tasks/:id`      | Change any of `title`, `skillIds`, `status`, `assigneeId` (`null` unassigns) |
+| DELETE | `/api/tasks/:id`      | Delete a task and its whole subtree (204) |
 | GET    | `/api/developers`     | Developers with their skills and assigned tasks |
 | GET    | `/api/developers/:id` | One developer |
 | GET    | `/api/skills`         | Skills with the developers who have them |
@@ -148,6 +149,10 @@ A task object:
 
 **Assignment.** A developer can be assigned only if they hold *every* skill the task requires (Carol can take a Frontend + Backend task; Bob cannot). A task with no required skills can go to anyone. The API enforces this; the UI mirrors it by disabling ineligible developers and showing what they're missing.
 
+**Editing.** Title and required skills can be changed after creation. The assignment rule is checked against the state *after* the edit, so adding a skill the current assignee lacks is rejected (`SKILL_MISMATCH`), while changing skills and assignee together in one request works. Sending `skillIds: []` asks the LLM to identify skills from the (possibly new) title, mirroring creation; choosing skills clears the AI marker, and editing only the title leaves skills untouched.
+
+**Deleting** a task deletes its subtasks with it (`ON DELETE CASCADE` on `parent_id`). Removing subtasks can't break the completion invariant below, since it can only remove open children, never add them.
+
 **Completion.** A task can move to Done only when all its direct subtasks are Done. Because the rule applies at every level, checking direct children is enough to cover the whole subtree.
 
 That argument relies on an invariant: *a Done task only has Done subtasks.* The brief's rule alone can't guarantee it, because a subtask could be moved back to To-do after its parent was completed. So the API also rejects reopening a subtask while its parent is Done (`PARENT_DONE`). The user reopens the parent first. I chose to reject rather than silently reopening the parent, because a status change you didn't make is surprising.
@@ -182,7 +187,6 @@ Covered: seeded data, reads and 404s, validation, skill-matched assignment, nest
 
 ## Possible next steps
 
-- Delete tasks, and edit titles or skills after creation.
 - Frontend component tests (Vitest + Testing Library) and a Playwright end-to-end smoke test.
 - Code-split the frontend bundle (about 520 kB before gzip, mostly Radix and React).
 - Retry the LLM call with backoff, or classify asynchronously and let the UI show a pending state.

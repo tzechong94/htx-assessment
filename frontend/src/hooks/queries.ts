@@ -47,7 +47,12 @@ export function useUpdateTask() {
               : developer
                 ? { id: developer.id, name: developer.name }
                 : null;
-          return { ...task, ...(input.status && { status: input.status }), assignee };
+          return {
+            ...task,
+            ...(input.title !== undefined && { title: input.title }),
+            ...(input.status && { status: input.status }),
+            assignee,
+          };
         }),
       );
       return { previous };
@@ -56,6 +61,18 @@ export function useUpdateTask() {
       queryClient.setQueryData(queryKeys.tasks, context?.previous);
       toast.error("Couldn't update task", { description: error.message });
     },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.developers });
+    },
+  });
+}
+
+export function useDeleteTask() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: api.deleteTask,
+    onError: (error) => toast.error("Couldn't delete task", { description: error.message }),
     onSettled: () => {
       void queryClient.invalidateQueries({ queryKey: queryKeys.tasks });
       void queryClient.invalidateQueries({ queryKey: queryKeys.developers });
