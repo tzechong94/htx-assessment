@@ -1,0 +1,88 @@
+import { relations } from 'drizzle-orm';
+import {
+  index,
+  integer,
+  pgEnum,
+  pgTable,
+  primaryKey,
+  text,
+  timestamp,
+} from 'drizzle-orm/pg-core';
+
+export const TASK_STATUSES = ['todo', 'in_progress', 'done'] as const;
+export type TaskStatus = (typeof TASK_STATUSES)[number];
+
+export const taskStatus = pgEnum('task_status', TASK_STATUSES);
+
+export const skills = pgTable('skills', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull().unique(),
+});
+
+export const developers = pgTable('developers', {
+  id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+  name: text('name').notNull(),
+});
+
+export const developerSkills = pgTable(
+  'developer_skills',
+  {
+    developerId: integer('developer_id')
+      .notNull()
+      .references(() => developers.id, { onDelete: 'cascade' }),
+    skillId: integer('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.developerId, t.skillId] })],
+);
+
+export const tasks = pgTable(
+  'tasks',
+  {
+    id: integer('id').primaryKey().generatedAlwaysAsIdentity(),
+    title: text('title').notNull(),
+    status: taskStatus('status').notNull().default('todo'),
+    assigneeId: integer('assignee_id').references(() => developers.id, { onDelete: 'set null' }),
+    createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
+  },
+  (t) => [index('tasks_assignee_id_idx').on(t.assigneeId)],
+);
+
+export const taskSkills = pgTable(
+  'task_skills',
+  {
+    taskId: integer('task_id')
+      .notNull()
+      .references(() => tasks.id, { onDelete: 'cascade' }),
+    skillId: integer('skill_id')
+      .notNull()
+      .references(() => skills.id, { onDelete: 'cascade' }),
+  },
+  (t) => [primaryKey({ columns: [t.taskId, t.skillId] })],
+);
+
+export const skillsRelations = relations(skills, ({ many }) => ({
+  developerSkills: many(developerSkills),
+  taskSkills: many(taskSkills),
+}));
+
+export const developersRelations = relations(developers, ({ many }) => ({
+  developerSkills: many(developerSkills),
+  tasks: many(tasks),
+}));
+
+export const developerSkillsRelations = relations(developerSkills, ({ one }) => ({
+  developer: one(developers, { fields: [developerSkills.developerId], references: [developers.id] }),
+  skill: one(skills, { fields: [developerSkills.skillId], references: [skills.id] }),
+}));
+
+export const tasksRelations = relations(tasks, ({ one, many }) => ({
+  assignee: one(developers, { fields: [tasks.assigneeId], references: [developers.id] }),
+  taskSkills: many(taskSkills),
+}));
+
+export const taskSkillsRelations = relations(taskSkills, ({ one }) => ({
+  task: one(tasks, { fields: [taskSkills.taskId], references: [tasks.id] }),
+  skill: one(skills, { fields: [taskSkills.skillId], references: [skills.id] }),
+}));

@@ -1,0 +1,20 @@
+services:
+  db:
+    image: postgres:18-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: task_assignment
+    ports:
+      # 5433 on the host so it does not clash with a locally installed Postgres.
+      - "5433:5432"
+    volumes:
+      - db-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d task_assignment"]
+      interval: 2s
+      timeout: 5s
+      retries: 20
+
+volumes:
+  db-data:
