@@ -19,7 +19,7 @@ docker compose up --build
 
 Open **http://localhost:8080**.
 
-On first boot the backend applies migrations and seeds Alice, Bob, Carol and Dave. The seed is idempotent, so restarts do not duplicate data. The app runs fully without a Gemini key; tasks created without skills are then saved with no skills (see [LLM skill identification](#llm-skill-identification)).
+On first boot the backend applies migrations and seeds Alice, Bob, Carol and Dave plus the three example tasks from the wireframe. The seed is idempotent (sample tasks are matched by title), so restarts do not duplicate data. The app runs fully without a Gemini key; tasks created without skills are then saved with no skills (see [LLM skill identification](#llm-skill-identification)).
 
 To reset all data: `docker compose down -v`.
 
@@ -176,7 +176,7 @@ The default model is `gemini-3.5-flash-lite` (fast and cheap for classification)
 
 ## Testing
 
-`pnpm test` runs 26 backend tests with Vitest and Supertest against **PGlite**, a WASM build of real Postgres that runs in-process. Each test file gets a fresh database with the real migrations and seed applied, so the tests cover the actual SQL (constraints, enums, row locks, cascades) without needing Docker. The LLM is injected into `createApp`, so tests use a stub and never hit the network. The Gemini client has its own unit tests with a fake `fetch`, covering the request shape and every failure path.
+`pnpm test` runs 27 backend tests with Vitest and Supertest against **PGlite**, a WASM build of real Postgres that runs in-process. Each test file gets a fresh database with the real migrations and seed applied, so the tests cover the actual SQL (constraints, enums, row locks, cascades) without needing Docker. The LLM is injected into `createApp`, so tests use a stub and never hit the network. The Gemini client has its own unit tests with a fake `fetch`, covering the request shape and every failure path.
 
 Covered: seeded data, reads and 404s, validation, skill-matched assignment, nested create (including rollback of the whole tree on one bad node), the Done and reopen rules at multiple depths, LLM batching and fallback, and assignment rules applied to LLM-identified skills.
 

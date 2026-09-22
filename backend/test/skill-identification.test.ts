@@ -90,10 +90,10 @@ describe('Gemini skill identifier', () => {
   });
 
   it('returns nulls without calling the API when no key is configured', async () => {
-    const fetch = vi.fn<typeof fetch>();
-    const identify = createGeminiSkillIdentifier({ apiKey: undefined, model: 'm', fetch });
+    const fetchMock = vi.fn<typeof fetch>();
+    const identify = createGeminiSkillIdentifier({ apiKey: undefined, model: 'm', fetch: fetchMock });
     await expect(identify(['a'], skills)).resolves.toEqual([null]);
-    expect(fetch).not.toHaveBeenCalled();
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it('returns nulls on HTTP errors, malformed output and network failures', async () => {

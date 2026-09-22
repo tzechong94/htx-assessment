@@ -22,6 +22,7 @@ export async function createTestApp(overrides: Partial<Omit<AppDeps, 'db'>> = {}
 
   return {
     api: request(app),
+    db,
     close: () => client.close(),
     developerId: (name: string) => developers.find((d) => d.name === name)!.id,
     skillId: (name: string) => skills.find((s) => s.name === name)!.id,

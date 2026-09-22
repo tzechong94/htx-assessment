@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { seedSampleTasks } from '../src/db/seed.js';
 import { createTestApp } from './helpers.js';
 
 let t: Awaited<ReturnType<typeof createTestApp>>;
@@ -97,5 +98,25 @@ describe('assigning tasks', () => {
     await t.api.patch(`/api/tasks/${id}`).send({ status: 'blocked' }).expect(400);
     await t.api.patch(`/api/tasks/${id}`).send({}).expect(400);
     await t.api.patch('/api/tasks/9999').send({ status: 'done' }).expect(404);
+  });
+});
+
+describe('sample tasks', () => {
+  it('seeds the three wireframe tasks once, even when run repeatedly', async () => {
+    await seedSampleTasks(t.db);
+    await seedSampleTasks(t.db);
+
+    const res = await t.api.get('/api/tasks').expect(200);
+    expect(
+      res.body.map((task: { skills: { name: string }[]; assignee: { name: string } | null; status: string }) => [
+        task.skills.map((s) => s.name),
+        task.assignee?.name ?? null,
+        task.status,
+      ]),
+    ).toEqual([
+      [['Frontend'], 'Alice', 'todo'],
+      [['Backend'], null, 'todo'],
+      [['Frontend', 'Backend'], null, 'todo'],
+    ]);
   });
 });
