@@ -78,6 +78,28 @@ e2e/
 docker-compose.yml         db, backend, frontend (nginx)
 ```
 
+## Architecture
+
+```mermaid
+flowchart LR
+    B[Browser: React SPA] -->|"/ (static files)"| N[nginx]
+    B -->|"/api/*"| N
+    N -->|proxy| A[Express API]
+    subgraph Backend
+      A --> R[routes: Zod validation, HTTP status] --> S[services: queries and business rules] --> D[Drizzle ORM]
+      S --> G[skill identifier]
+    end
+    D --> P[(PostgreSQL)]
+    G -->|HTTPS| L[Gemini API]
+```
+
+- **Three containers:** `db` (Postgres), `backend` (Express), `frontend` (nginx serving the built SPA). Compose starts them in order, gated on health checks. The backend applies migrations and the idempotent seed before it starts listening.
+- **One origin.** nginx serves the SPA and proxies `/api` to the backend (Vite's dev server does the same in development), so the browser never makes cross-origin calls and no CORS setup is needed.
+- **Layered backend.** Routes only parse input with Zod and map results to HTTP; services hold every query and business rule; `createApp(deps)` receives the database and the skill identifier as parameters, so tests swap in an in-memory Postgres and a stub LLM without mocking modules.
+- **Rules live in the API; the UI mirrors them.** The server is the source of truth for assignment and completion rules. The UI repeats them only to disable impossible choices up front and explain why.
+
+A create request, end to end: the form builds a nested payload, Zod validates it (at most 50 tasks), the service checks that referenced skills exist, sends every skill-less title to Gemini in one batched call, then inserts the whole tree in a single transaction and returns it.
+
 ## Data model
 
 ```mermaid
@@ -191,6 +213,49 @@ The default model is `gemini-3.5-flash-lite` (fast and cheap for classification)
 - **Row actions:** each task has a menu with Edit (a dialog reusing the create form's fields, sending only what changed so untouched AI skills keep their marker) and Delete (a confirmation that says how many subtasks go with it, and stays open until the server confirms).
 - **Create page:** `TaskDraftEditor` renders itself recursively for each subtask, so nesting depth is unlimited on the client (the server caps a request at 50 tasks). Subtasks are numbered in outline form (1, 2, 2.1).
 - **API access:** in dev, Vite proxies `/api`; in Docker, nginx does. The browser always calls the same origin, so no CORS configuration is needed.
+
+## Libraries and why
+
+Every version is pinned exactly (`save-exact`). Releases less than a week old were skipped in favour of the previous version, to limit supply-chain risk.
+
+**Backend**
+
+| Library | Why | Considered instead |
+| ------- | --- | ------------------ |
+| Express 5 | The brief suggests it; minimal and widely known. v5 forwards errors from `async` handlers to the error middleware, so no wrapper is needed. | Fastify, NestJS: more structure than a handful of endpoints needs. |
+| Drizzle ORM + drizzle-kit | Schema written in TypeScript, so query results are typed without codegen. Generates readable SQL migrations, and supports row locks (`FOR UPDATE`), which the completion rule depends on. Runs on both node-postgres and PGlite, which is what makes the in-memory tests possible. | Prisma: heavier engine binary in Docker and awkward for self-referencing trees. Raw `pg`: every result would need hand-written types. |
+| pg (node-postgres) | The standard Postgres driver, with connection pooling. | |
+| Zod | Validates request bodies and the LLM's JSON response, and derives TypeScript types from the same schema. Handles the recursive subtask shape. | Hand-written checks. |
+| (no Gemini SDK) | The call is one `fetch` to `generateContent`, so an SDK would add a dependency without removing code, and plain `fetch` is easy to fake in tests. | `@google/genai`. |
+
+**Frontend**
+
+| Library | Why | Considered instead |
+| ------- | --- | ------------------ |
+| React 19 + Vite | Required React; Vite gives instant dev reloads, an `/api` proxy, and a static build that nginx can serve. | Next.js: its server features are unused in a pure SPA backed by a separate API. |
+| Tailwind CSS v4 | Requested. Styles live next to markup, and the design tokens come from CSS variables. | |
+| shadcn/ui on Radix (`radix-ui`, `class-variance-authority`, `cn`, `tw-animate-css`) | Requested. Components are copied into `src/components/ui`, so they are owned and editable rather than a black-box dependency. Radix supplies the accessibility (keyboard navigation, focus trapping, ARIA) for the select, dialog and menu primitives. `cn` is shadcn's class merger; `tw-animate-css` provides the open/close animations. | |
+| Lucide | Requested; the icon set shadcn uses. | |
+| TanStack Query | Caching, refetching after mutations, and optimistic updates with rollback, which is how status and assignee changes apply instantly and undo themselves if the server rejects them. | `useEffect` + `useState`: re-implements all of that by hand. |
+| React Router | Client-side routing for the two pages, with deep links working behind nginx's SPA fallback. | |
+| Sonner | Toasts for success and for server rejections (for example `SKILL_MISMATCH`). | |
+| Geist (`@fontsource-variable/geist`) | Self-hosted font from the shadcn preset; no request to a third-party font CDN. | |
+
+Two packages are present only because the shadcn CLI added them: `shadcn` itself (its stylesheet is imported by `index.css`) and `next-themes` (imported by the generated toast component, but inert here since the app has no theme switcher).
+
+**Testing and tooling**
+
+| Library | Why |
+| ------- | --- |
+| TypeScript 6 | Strict typing end to end. Version 6 rather than 7, because `typescript-eslint` does not support 7 yet. |
+| Vitest | One test runner for both packages; it reuses the Vite config and runs TypeScript directly. |
+| Supertest | Sends real HTTP requests to the Express app in-process. |
+| PGlite | Real Postgres compiled to WASM and run in-process, so backend tests exercise actual constraints, enums, locks and cascades with no Docker. |
+| Testing Library + jsdom | Tests components the way a user reaches them (roles and labels), not through implementation details. |
+| Playwright | Drives the real app in Chromium for the end-to-end smoke test. |
+| tsx | Runs TypeScript directly in development (`watch` mode) and for the migrate and seed scripts. |
+| ESLint + typescript-eslint | Catches bugs the type checker doesn't. |
+| pnpm workspaces | One lockfile for backend, frontend and e2e; Docker builds install only the package they need with `--filter`. |
 
 ## Testing
 
