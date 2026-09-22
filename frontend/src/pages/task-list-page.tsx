@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Link } from 'react-router';
 import { cn } from 'cn';
 import { AssigneeSelect } from '@/components/assignee-select';
+import { IdentifySkillsButton } from '@/components/identify-skills-button';
 import { PageHeader } from '@/components/page-header';
 import { SkillBadges } from '@/components/skill-badges';
 import { StatusSelect } from '@/components/status-select';
@@ -96,7 +97,11 @@ function TaskRows({ task, parent, depth, developers, collapsed, onToggle }: Task
           </div>
         </TableCell>
         <TableCell className="py-4 align-top">
-          <SkillBadges skills={task.skills} identifiedByLlm={task.skillsIdentifiedByLlm} />
+          {task.skills.length > 0 ? (
+            <SkillBadges skills={task.skills} identifiedByLlm={task.skillsIdentifiedByLlm} />
+          ) : (
+            <IdentifySkillsButton taskId={task.id} />
+          )}
         </TableCell>
         <TableCell className="py-3 align-top">
           <StatusSelect

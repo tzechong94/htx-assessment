@@ -203,6 +203,7 @@ When a task or subtask is created without skills, the backend asks Gemini to cla
 - **Outside the transaction.** The call happens before the insert transaction opens, so network latency never holds database locks.
 - **Graceful failure.** With no key, a timeout (15s), an HTTP error or malformed output, the task is still created, with no skills, and a warning is logged. Failing the whole create because an optional enrichment failed would be worse for the user.
 - **Provenance.** `skills_identified_by_llm` records where skills came from; the UI shows a sparkle with a tooltip.
+- **Retry.** Since creation always asks the LLM when no skills are chosen, a task with no skills means identification failed. Such rows show an **Identify skills** button, which sends `PATCH { "skillIds": [] }` to run identification again, and warns if it comes back empty (for example, the key is still missing).
 
 The default model is `gemini-3.5-flash-lite` (fast and cheap for classification); override it with `GEMINI_MODEL`. Checked against the live API with the brief's three examples: all three classified as expected, in one batched call of about 1.6s.
 
@@ -264,12 +265,12 @@ Three layers, from fastest to most realistic:
 | Command    | What                                   | Count | Needs |
 | ---------- | -------------------------------------- | ----- | ----- |
 | `pnpm test` | Backend API and unit tests            | 36    | nothing |
-| `pnpm test` | Frontend component tests              | 14    | nothing |
+| `pnpm test` | Frontend component tests              | 16    | nothing |
 | `pnpm e2e`  | Playwright smoke test of a full journey | 1   | running app |
 
 **Backend** (Vitest + Supertest) runs against **PGlite**, a WASM build of real Postgres that runs in-process. Each test file gets a fresh database with the real migrations and seed applied, so the tests exercise the actual SQL (constraints, enums, row locks, cascades) without Docker. The LLM is injected into `createApp`, so tests use a stub and never hit the network; the Gemini client has its own unit tests with a fake `fetch` covering the request shape and every failure path. Covered: seeded data, reads and 404s, validation, skill-matched assignment, nested create (including rollback of the whole tree on one bad node), the Done and reopen rules at multiple depths, editing (including the resulting-state assignment check and LLM re-identification), cascading delete, and LLM batching and fallback.
 
-**Frontend** (Vitest + Testing Library on jsdom) renders components with a query cache pre-filled with skills and developers. Covered: assignee eligibility, blocked statuses, the recursive draft editor (outline numbering, nesting, removal, the payload it builds), and the edit dialog sending only changed fields.
+**Frontend** (Vitest + Testing Library on jsdom) renders components with a query cache pre-filled with skills and developers. Covered: assignee eligibility, blocked statuses, the recursive draft editor (outline numbering, nesting, removal, the payload it builds), the edit dialog sending only changed fields, and the Identify skills button (request sent, warning on an empty result).
 
 **End-to-end** (Playwright) drives the real app in Chromium: create a task with a subtask, check that only qualified developers can be assigned, confirm Done is blocked until the subtask is Done, then edit and delete. It picks skills explicitly so it never depends on Gemini, and uses unique titles so it can run against a database that already has data.
 
