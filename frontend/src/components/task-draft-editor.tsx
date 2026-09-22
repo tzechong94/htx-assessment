@@ -49,6 +49,8 @@ export function TaskDraftEditor({ draft, onChange, onRemove, path, showErrors }:
 
   return (
     <div
+      role={isSubtask ? 'group' : undefined}
+      aria-label={isSubtask ? `Subtask ${path}` : undefined}
       className={cn(
         isSubtask && 'rounded-xl border bg-muted/30 p-4 duration-200 animate-in fade-in-0 slide-in-from-top-1',
       )}
