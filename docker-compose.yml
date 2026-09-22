@@ -6,8 +6,9 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: task_assignment
     ports:
+      # Loopback only: the default credentials must not be reachable from the network.
       # 5433 on the host so it does not clash with a locally installed Postgres.
-      - "5433:5432"
+      - "127.0.0.1:5433:5432"
     volumes:
       - db-data:/var/lib/postgresql
     healthcheck:
@@ -39,7 +40,8 @@ services:
       context: .
       dockerfile: frontend/Dockerfile
     ports:
-      - "8080:80"
+      # Loopback only: the app has no login, so it should not be reachable from the network.
+      - "127.0.0.1:8080:80"
     depends_on:
       backend:
         condition: service_healthy
