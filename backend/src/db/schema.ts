@@ -1,5 +1,7 @@
-import { relations } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 import {
+  type AnyPgColumn,
+  check,
   index,
   integer,
   pgEnum,
@@ -44,9 +46,15 @@ export const tasks = pgTable(
     title: text('title').notNull(),
     status: taskStatus('status').notNull().default('todo'),
     assigneeId: integer('assignee_id').references(() => developers.id, { onDelete: 'set null' }),
+    // Subtasks are tasks with a parent (adjacency list), so they share every property of a task.
+    parentId: integer('parent_id').references((): AnyPgColumn => tasks.id, { onDelete: 'cascade' }),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [index('tasks_assignee_id_idx').on(t.assigneeId)],
+  (t) => [
+    index('tasks_assignee_id_idx').on(t.assigneeId),
+    index('tasks_parent_id_idx').on(t.parentId),
+    check('tasks_not_own_parent', sql`${t.parentId} <> ${t.id}`),
+  ],
 );
 
 export const taskSkills = pgTable(
@@ -79,6 +87,8 @@ export const developerSkillsRelations = relations(developerSkills, ({ one }) => 
 
 export const tasksRelations = relations(tasks, ({ one, many }) => ({
   assignee: one(developers, { fields: [tasks.assigneeId], references: [developers.id] }),
+  parent: one(tasks, { fields: [tasks.parentId], references: [tasks.id], relationName: 'subtasks' }),
+  subtasks: many(tasks, { relationName: 'subtasks' }),
   taskSkills: many(taskSkills),
 }));
 

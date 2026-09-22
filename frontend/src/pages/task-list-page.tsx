@@ -1,4 +1,5 @@
-import { ClipboardList, Plus, RotateCw } from 'lucide-react';
+import { ChevronRight, ClipboardList, Plus, RotateCw } from 'lucide-react';
+import { useState } from 'react';
 import { Link } from 'react-router';
 import { cn } from 'cn';
 import { AssigneeSelect } from '@/components/assignee-select';
@@ -12,6 +13,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@
 import { useDevelopers, useTasks, useUpdateTask } from '@/hooks/queries';
 import type { Developer, Task } from '@/lib/api';
 import { STATUSES } from '@/lib/status';
+import { blockedStatuses, flattenTasks } from '@/lib/tasks';
 
 function StatusSummary({ tasks }: { tasks: Task[] }) {
   return (
@@ -24,7 +26,7 @@ function StatusSummary({ tasks }: { tasks: Task[] }) {
           <span className={cn('size-2 rounded-full', status.dot)} aria-hidden />
           {status.label}
           <span className="text-muted-foreground tabular-nums">
-            {tasks.filter((t) => t.status === status.value).length}
+            {flattenTasks(tasks).filter((t) => t.status === status.value).length}
           </span>
         </div>
       ))}
@@ -32,28 +34,98 @@ function StatusSummary({ tasks }: { tasks: Task[] }) {
   );
 }
 
-function TaskRow({ task, developers }: { task: Task; developers: Developer[] }) {
-  const updateTask = useUpdateTask();
+function SubtaskProgress({ subtasks }: { subtasks: Task[] }) {
+  const done = subtasks.filter((s) => s.status === 'done').length;
   return (
-    <TableRow>
-      <TableCell className="py-4 align-top whitespace-normal">
-        <p className="max-w-prose leading-relaxed">{task.title}</p>
-      </TableCell>
-      <TableCell className="py-4 align-top">
-        <SkillBadges skills={task.skills} />
-      </TableCell>
-      <TableCell className="py-3 align-top">
-        <StatusSelect value={task.status} onChange={(status) => updateTask.mutate({ id: task.id, input: { status } })} />
-      </TableCell>
-      <TableCell className="py-3 align-top">
-        <AssigneeSelect
-          assignee={task.assignee}
-          requiredSkills={task.skills}
-          developers={developers}
-          onChange={(assigneeId) => updateTask.mutate({ id: task.id, input: { assigneeId } })}
+    <div className="mt-2 flex items-center gap-2 text-xs text-muted-foreground">
+      <div className="h-1 w-16 overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full rounded-full bg-emerald-500 transition-[width]"
+          style={{ width: `${(done / subtasks.length) * 100}%` }}
         />
-      </TableCell>
-    </TableRow>
+      </div>
+      <span className="tabular-nums">
+        {done}/{subtasks.length} subtasks done
+      </span>
+    </div>
+  );
+}
+
+type TaskRowsProps = {
+  task: Task;
+  parent?: Task;
+  depth: number;
+  developers: Developer[];
+  collapsed: Set<number>;
+  onToggle: (id: number) => void;
+};
+
+/** Renders a task row followed, when expanded, by its subtask rows (recursively). */
+function TaskRows({ task, parent, depth, developers, collapsed, onToggle }: TaskRowsProps) {
+  const updateTask = useUpdateTask();
+  const hasSubtasks = task.subtasks.length > 0;
+  const expanded = hasSubtasks && !collapsed.has(task.id);
+
+  return (
+    <>
+      <TableRow className={cn(depth > 0 && 'bg-muted/20')}>
+        <TableCell className="py-4 align-top whitespace-normal">
+          <div className="flex items-start gap-1.5" style={{ paddingLeft: depth * 24 }}>
+            {hasSubtasks ? (
+              <button
+                type="button"
+                onClick={() => onToggle(task.id)}
+                aria-expanded={expanded}
+                aria-label={expanded ? 'Collapse subtasks' : 'Expand subtasks'}
+                className="mt-0.5 flex size-5 shrink-0 cursor-pointer items-center justify-center rounded text-muted-foreground hover:bg-muted hover:text-foreground"
+              >
+                <ChevronRight className={cn('size-4 transition-transform', expanded && 'rotate-90')} />
+              </button>
+            ) : (
+              <span className="size-5 shrink-0" aria-hidden>
+                {depth > 0 && <span className="mx-auto mt-2 block size-1.5 rounded-full bg-border" />}
+              </span>
+            )}
+            <div className="min-w-0">
+              <p className={cn('max-w-prose leading-relaxed', task.status === 'done' && 'text-muted-foreground')}>
+                {task.title}
+              </p>
+              {hasSubtasks && <SubtaskProgress subtasks={task.subtasks} />}
+            </div>
+          </div>
+        </TableCell>
+        <TableCell className="py-4 align-top">
+          <SkillBadges skills={task.skills} />
+        </TableCell>
+        <TableCell className="py-3 align-top">
+          <StatusSelect
+            value={task.status}
+            blocked={blockedStatuses(task, parent)}
+            onChange={(status) => updateTask.mutate({ id: task.id, input: { status } })}
+          />
+        </TableCell>
+        <TableCell className="py-3 align-top">
+          <AssigneeSelect
+            assignee={task.assignee}
+            requiredSkills={task.skills}
+            developers={developers}
+            onChange={(assigneeId) => updateTask.mutate({ id: task.id, input: { assigneeId } })}
+          />
+        </TableCell>
+      </TableRow>
+      {expanded &&
+        task.subtasks.map((subtask) => (
+          <TaskRows
+            key={subtask.id}
+            task={subtask}
+            parent={task}
+            depth={depth + 1}
+            developers={developers}
+            collapsed={collapsed}
+            onToggle={onToggle}
+          />
+        ))}
+    </>
   );
 }
 
@@ -101,6 +173,15 @@ export function TaskListPage() {
   const developers = useDevelopers();
   const error = tasks.error ?? developers.error;
   const loaded = tasks.data && developers.data ? { tasks: tasks.data, developers: developers.data } : null;
+  const [collapsed, setCollapsed] = useState<Set<number>>(new Set());
+
+  function toggle(id: number) {
+    setCollapsed((prev) => {
+      const next = new Set(prev);
+      if (!next.delete(id)) next.add(id);
+      return next;
+    });
+  }
 
   return (
     <>
@@ -140,7 +221,8 @@ export function TaskListPage() {
           <Table>
             <TableHeader className="bg-muted/50">
               <TableRow>
-                <TableHead className="w-[46%] pl-4">Task title</TableHead>
+                {/* Indent matches the chevron column so the header lines up with task titles. */}
+                <TableHead className="w-[46%] pl-[42px]">Task title</TableHead>
                 <TableHead>Skills</TableHead>
                 <TableHead className="w-40">Status</TableHead>
                 <TableHead className="w-48 pr-4">Assignee</TableHead>
@@ -148,7 +230,16 @@ export function TaskListPage() {
             </TableHeader>
             <TableBody className="[&_td:first-child]:pl-4 [&_td:last-child]:pr-4">
               {loaded ? (
-                loaded.tasks.map((task) => <TaskRow key={task.id} task={task} developers={loaded.developers} />)
+                loaded.tasks.map((task) => (
+                  <TaskRows
+                    key={task.id}
+                    task={task}
+                    depth={0}
+                    developers={loaded.developers}
+                    collapsed={collapsed}
+                    onToggle={toggle}
+                  />
+                ))
               ) : (
                 <LoadingRows />
               )}

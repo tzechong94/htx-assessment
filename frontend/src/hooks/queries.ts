@@ -2,6 +2,12 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { toast } from 'sonner';
 import { api, type Task, type UpdateTaskInput } from '@/lib/api';
 
+function updateInTree(tasks: Task[], id: number, update: (task: Task) => Task): Task[] {
+  return tasks.map((task) =>
+    task.id === id ? update(task) : { ...task, subtasks: updateInTree(task.subtasks, id, update) },
+  );
+}
+
 export const queryKeys = {
   tasks: ['tasks'] as const,
   developers: ['developers'] as const,
@@ -33,8 +39,7 @@ export function useUpdateTask() {
       await queryClient.cancelQueries({ queryKey: queryKeys.tasks });
       const previous = queryClient.getQueryData<Task[]>(queryKeys.tasks);
       queryClient.setQueryData<Task[]>(queryKeys.tasks, (tasks) =>
-        tasks?.map((task) => {
-          if (task.id !== id) return task;
+        tasks && updateInTree(tasks, id, (task) => {
           const developer = developers.find((d) => d.id === input.assigneeId);
           const assignee =
             input.assigneeId === undefined

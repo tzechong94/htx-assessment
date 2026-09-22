@@ -5,9 +5,22 @@ import { TASK_STATUSES } from '../db/schema.js';
 import { createTask, getTask, listTasks, updateTask } from '../services/tasks.js';
 import { idParam } from './params.js';
 
-const createTaskBody = z.object({
+// Bounds a single request, since every node is a row insert (and later an LLM classification).
+const MAX_TASKS_PER_REQUEST = 50;
+
+const taskNode = z.object({
   title: z.string().trim().min(1).max(500),
   skillIds: z.array(z.number().int().positive()).default([]),
+  get subtasks() {
+    return z.array(taskNode).default([]);
+  },
+});
+
+type TaskNode = z.infer<typeof taskNode>;
+const countNodes = (node: TaskNode): number => 1 + node.subtasks.reduce((n, s) => n + countNodes(s), 0);
+
+const createTaskBody = taskNode.refine((root) => countNodes(root) <= MAX_TASKS_PER_REQUEST, {
+  message: `A task tree may contain at most ${MAX_TASKS_PER_REQUEST} tasks`,
 });
 
 const updateTaskBody = z

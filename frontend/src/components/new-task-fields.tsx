@@ -7,15 +7,16 @@ import { Textarea } from '@/components/ui/textarea';
 import { useSkills } from '@/hooks/queries';
 import { skillStyle } from '@/lib/skills';
 
-export type TaskDraft = { title: string; skillIds: number[] };
+export type TaskFields = { title: string; skillIds: number[] };
 
-type Props = {
-  draft: TaskDraft;
-  onChange: (draft: TaskDraft) => void;
+type Props<T extends TaskFields> = {
+  draft: T;
+  onChange: (draft: T) => void;
   showErrors: boolean;
+  autoFocus?: boolean;
 };
 
-export function NewTaskFields({ draft, onChange, showErrors }: Props) {
+export function NewTaskFields<T extends TaskFields>({ draft, onChange, showErrors, autoFocus }: Props<T>) {
   const id = useId();
   const skills = useSkills();
   const titleError = showErrors && !draft.title.trim();
@@ -39,6 +40,7 @@ export function NewTaskFields({ draft, onChange, showErrors }: Props) {
           aria-invalid={titleError}
           aria-describedby={titleError ? `${id}-title-error` : undefined}
           maxLength={500}
+          autoFocus={autoFocus}
           rows={2}
           className="resize-none bg-background"
         />

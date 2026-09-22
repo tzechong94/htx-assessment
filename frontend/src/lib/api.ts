@@ -13,12 +13,14 @@ export type Task = {
   id: number;
   title: string;
   status: TaskStatus;
+  parentId: number | null;
   skills: Skill[];
   assignee: DeveloperRef | null;
   createdAt: string;
+  subtasks: Task[];
 };
 
-export type CreateTaskInput = { title: string; skillIds: number[] };
+export type CreateTaskInput = { title: string; skillIds: number[]; subtasks: CreateTaskInput[] };
 
 export type UpdateTaskInput = { status?: TaskStatus; assigneeId?: number | null };
 
